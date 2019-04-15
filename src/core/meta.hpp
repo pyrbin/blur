@@ -1,32 +1,29 @@
 #pragma once
 
+#include <type_traits>
+#include "component.hpp"
+
 namespace blur {
+/*
+    has member function
+*/
+template <typename T>
+struct is_member_function : std::false_type {};
+template <typename C, typename R, typename... Ts>
+struct is_member_function<R (C::*)(Ts...) const> : std::true_type {};
+template <typename T>
+constexpr bool is_member_function_v = is_member_function<T>::value;
 
-using hash_code = size_t;
-
-struct MetaComponentId {
-    hash_code hash{0};
-};
-
-struct MetaComponentBase {
-    using ConstructorFunc = void(void*);
-    using DestructorFunc = void(void*);
-    hash_code size{0};
-    MetaComponentId id{};
-    std::string name{""};
-    ConstructorFunc* ctor;
-    DestructorFunc* dtor;
-    MetaComponentBase() {}
-    MetaComponentBase(MetaComponentId id, size_t size, std::string name,
-                      ConstructorFunc* ctor, DestructorFunc* dtor)
-        : id{id}, size{size}, name{name}, ctor{ctor}, dtor{dtor} {}
-};
-template <typename C>
-struct MetaComponent : public MetaComponentBase {
-    constexpr MetaComponent()
-        : MetaComponentBase({typeid(C).hash_code()}, sizeof(C),
-                            typeid(C).name() + 1, [](void* p) { new (p) C{}; },
-                            [](void* p) { ((C*)p)->~C(); }) {}
-};
-
-}
+/*
+    has process function
+*/
+template <typename T, typename = void>
+struct has_process_fn : std::false_type {};
+template <typename T>
+struct has_process_fn<
+    T, std::enable_if_t<is_member_function_v<decltype(&T::process)>>>
+    : std::true_type {};
+/*
+    Test
+*/
+}  // namespace blur

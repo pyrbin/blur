@@ -32,7 +32,7 @@ auto alt = world.create(arch);
 
 ```
 ### Systems
-```cpp
+```c++
 struct TestSystem {
     void Execute(Position& pos, Velocity& vel..., Entity en) {
         // do system logic

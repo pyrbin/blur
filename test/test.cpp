@@ -1,5 +1,7 @@
+#include <time.h>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -8,8 +10,8 @@
 
 #include "../src/blur.hpp"
 
-#define TICK_COUNT 32
-#define TICK_MS 400
+#define TICK_COUNT 10
+#define TICK_MS 100
 
 // Components
 struct Pos {
@@ -30,6 +32,7 @@ struct MovSystem {
     void update(Pos& p, Vel& v) const {
         // simple acceleration
         p.x += v.force;
+        v.force = ((rand() % 9) + 1);
     }
 };
 
@@ -47,6 +50,7 @@ void render(blur::World& w, std::vector<blur::Entity> en) {
 // Test components
 int main() {
     // ------ Init
+    srand(time(NULL));
     std::vector<blur::Entity> entities;
     auto world = blur::World();
     auto movsys = MovSystem();
@@ -55,7 +59,7 @@ int main() {
         entities.push_back(e);
         auto& vel = world.get_comp<Vel>(e);
         auto& spr = world.get_comp<Sprite>(e);
-        vel.force = i;
+        vel.force = ((rand() % 9) + 1);
         spr.symbol = i - 1;
     }
     // ------ Update (simulate ticks)

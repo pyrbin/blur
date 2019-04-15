@@ -1,8 +1,7 @@
 #pragma once
 
-#define MAX_ENTITIES 3000
-
 #include <cstddef>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <unordered_map>
@@ -10,18 +9,18 @@
 
 namespace blur {
 
+class ArchetypeBlock;
+
 using EntityId = int32_t;
-using block_ptr = std::shared_ptr<ArchetypeBlock>;
+using block_t = std::shared_ptr<ArchetypeBlock>;
 
 struct Entity {
     EntityId id{-1};
     unsigned counter{0};
 };
 
-class ArchetypeBlock;
-
 struct EntityData {
-    block_ptr block{nullptr};
+    block_t block{nullptr};
     unsigned block_index{0};
     unsigned counter{0};
 };
@@ -32,7 +31,7 @@ struct EntityTable {
     std::vector<EntityId> last_deleted;
     EntityId last_free{0};
 
-    EntityTable(unsigned entities = MAX_ENTITIES) {
+    EntityTable(unsigned entities = 3000) {
         max_entities = entities;
         for (int i = 0; i < max_entities; i++) {
             entities_data.push_back(EntityData{});
@@ -40,7 +39,7 @@ struct EntityTable {
     }
 
     template <typename... Cs>
-    std::tuple<EntityId, EntityData&> add(block_ptr block) {
+    std::tuple<EntityId, EntityData&> add(block_t block) {
         EntityId idx = -1;
         if (last_deleted.size() > 0) {
             idx = last_deleted.back();
@@ -50,7 +49,7 @@ struct EntityTable {
             last_free++;
         }
         auto& data = entities_data[idx];
-        data.block = block_ptr(block);
+        data.block = block_t(block);
         data.block_index = data.block->next_free();
         return {idx, entities_data[idx]};
     }

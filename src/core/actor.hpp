@@ -20,4 +20,4 @@ struct Actor {
     }
 };
 
-}
+}  // namespace blur
