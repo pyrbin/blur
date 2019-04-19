@@ -27,4 +27,5 @@ struct has_process_fn<
 */
 template <typename T>
 using no_ref_t = typename std::remove_reference<T>::type;
+
 }  // namespace blur

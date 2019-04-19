@@ -62,15 +62,33 @@ class World {
         return stg.template try_get<C>(end.block_index);
     }
 
-    template <typename C>
-    constexpr void mod_comp(Entity ent, std::function<void(C&)> cb) noexcept {
-        auto& c = get_comp<C>(ent);
-        return cb(c);
+    template <typename... Cs, typename F>
+    void mod_comp(Entity ent, F&& f) {
+        return std::forward<F>(f)(get_comp<Cs>(ent)...);
     }
 
-    template <typename... Cs>
-    void mod_comp(Entity ent, std::function<void(std::tuple<Cs...>)> cb) {
-        return cb(get_comp<Cs>(ent)...);
+    template <typename Class, typename... Params>
+    void mod_comp_helper(Entity ent, Class* obj,
+                         void (Class::*f)(Params...) const) {
+        //(sys_ptr.get()->*f)(std::forward<Args>(args)...);
+        (obj->*f)(get_comp<std::decay_t<Params>>(ent)...);
+    }
+
+    // optional overload for mutable lambdas
+    template <typename Class, typename... Params>
+    void mod_comp_helper(Entity ent, Class* obj, void (Class::*f)(Params...)) {
+        (obj->*f)(get_comp<std::decay_t<Params>>(ent)...);
+    }
+
+    template <typename Functor>
+    void mod_comp_alt(Entity ent, Functor&& f) {
+        mod_comp_helper(ent, &f, &std::decay_t<Functor>::operator());
+    }
+
+    // optional overload for function pointers
+    template <typename... Params>
+    void mod_comp_alt(Entity ent, void (*f)(Params...)) {
+        f(get_comp<std::decay_t<Params>(ent)>...);
     }
 
     template <typename... Cs>
@@ -119,6 +137,5 @@ class World {
         }
         return ptr;
     }
-};  // namespace blur
-
+};
 }  // namespace blur

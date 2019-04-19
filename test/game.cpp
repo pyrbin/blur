@@ -1,5 +1,7 @@
 
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "../src/blur.hpp"
@@ -24,14 +26,11 @@ int main() {
     print_nice("Added Pos & Vel entity");
     auto ent = world.create(aty);
 
-    world.mod_comp<Velocity>(ent, [](auto& vel) {
-        // Set default velocity force value
-        vel.f += 5;
-    });
-
-    // TODO: implement modify multiple
-    // world.mod_comp<Velocity, Position>(
-    //    ent, [](Velocity vel, Position pos) { pos.x += vel.f; });
+    // Modify multiple
+    // world.mod_comp<Velocity>(ent, [](Velocity& vel) { vel.f += 5; });
+    world.mod_comp_alt(ent, [](Velocity& vel) { vel.f += 5; });
+    world.mod_comp_alt(ent, std::bind(&TestSystem::process, new TestSystem(),
+                                      std::placeholders::_1));
 
     // Test .has_comp
     print_nice("Test .has_comp");

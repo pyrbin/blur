@@ -77,6 +77,6 @@ struct SystemProcess : public SystemProcessBase {
         auto& comp = storage.template try_get<comp_t>(idx);
         return comp;
     }
-};  // namespace blur
+};
 
 }  // namespace blur
