@@ -4,45 +4,75 @@
 #include <stdexcept>
 #include <string>
 
+#include "util.hpp"
+
 namespace blur {
 
 using byte = char;
-using hash_code_t = size_t;
+using hash_code_t = uint_fast32_t;
 
-struct MetaComponentId {
-    hash_code_t hash{0};
+struct ComponentMask {
+    hash_code_t mask{0};
+    template <typename C>
+    hash_code_t add() {
+        mask |= (1 << typeid(C).hash_code());
+        return mask;
+    }
+    template <typename... Cs>
+    hash_code_t merge() {
+        (add<Cs>(), ...);
+        return mask;
+    }
+    template <typename C>
+    hash_code_t remove() {
+        mask &= ~(1 << typeid(C).hash_code());
+        return mask;
+    }
+    template <typename... Cs>
+    hash_code_t slice() {
+        (remove<Cs>(), ...);
+        return mask;
+    }
+    bool operator==(ComponentMask other) { return other.mask == mask; }
+    bool contains(ComponentMask other) {
+        return ((mask & other.mask) == other.mask);
+    }
+};
+template <typename... Cs>
+struct ImmutableComponentMask : public ComponentMask {
+    const hash_code_t mask{0};
+    constexpr ImmutableComponentMask() : mask{merge<Cs...>()} {}
 };
 
-struct MetaComponentBase {
+struct ComponentMetaBase {
     using ctor_func_t = void(void*);
     using dtor_func_t = void(void*);
 
     size_t size{0};
-    MetaComponentId id{};
+    hash_code_t id{0};
     std::string name{""};
     ctor_func_t* ctor;
     dtor_func_t* dtor;
 
-    MetaComponentBase() {}
-    MetaComponentBase(MetaComponentId id, size_t size, std::string name,
+    ComponentMetaBase() {}
+    virtual ~ComponentMetaBase() {}
+    ComponentMetaBase(hash_code_t id, size_t size, std::string name,
                       ctor_func_t* ctor, dtor_func_t* dtor)
         : id{id}, size{size}, name{name}, ctor{ctor}, dtor{dtor} {}
 };
 template <typename C>
-struct MetaComponent : public MetaComponentBase {
-    constexpr MetaComponent()
-        : MetaComponentBase({typeid(C).hash_code()}, sizeof(C),
+struct ComponentMeta : public ComponentMetaBase {
+    constexpr ComponentMeta()
+        : ComponentMetaBase(typeid(C).hash_code(), sizeof(C),
                             typeid(C).name() + 1, [](void* p) { new (p) C{}; },
                             [](void* p) { ((C*)p)->~C(); }) {}
 };
 
 struct ComponentStorage {
-    MetaComponentBase component;
+    ComponentMetaBase component;
     byte* cursor{nullptr};
-
     ComponentStorage(){};
-
-    ComponentStorage(MetaComponentBase component, byte* cursor)
+    ComponentStorage(ComponentMetaBase component, byte* cursor)
         : cursor{cursor}, component{component} {}
 
     ComponentStorage& operator=(const ComponentStorage& rhs) {
@@ -58,7 +88,7 @@ struct ComponentStorage {
     template <typename T>
     constexpr T& try_get(size_t idx) {
         std::string other_name = typeid(T).name() + 1;
-        if (component.id.hash != typeid(T).hash_code() &&
+        if (component.id != typeid(T).hash_code() &&
             component.size != sizeof(T) && component.name != other_name)
             throw std::invalid_argument("Can't get component " + other_name +
                                         " from a " + component.name +

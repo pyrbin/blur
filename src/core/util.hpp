@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include "component.hpp"
 
 namespace blur {
 /*
@@ -24,6 +23,8 @@ struct has_process_fn<
     T, std::enable_if_t<is_member_function_v<decltype(&T::process)>>>
     : std::true_type {};
 /*
-    Test
+    no ref
 */
+template <typename T>
+using no_ref_t = typename std::remove_reference<T>::type;
 }  // namespace blur

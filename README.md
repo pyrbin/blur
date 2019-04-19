@@ -1,4 +1,4 @@
-# WIP tiny ECS written in C++17
+# WIP tiny header-only ECS written in C++17
 
 ## Motivation
 

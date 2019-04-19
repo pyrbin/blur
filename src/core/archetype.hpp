@@ -8,56 +8,54 @@
 #include <vector>
 
 #include "component.hpp"
+#include "util.hpp"
 
 namespace blur {
 
-using byte = char;
-using block_allocator = std::allocator<byte>;
-using component_set = std::vector<MetaComponentBase>;
-template <typename H>
-using no_ref_const_t =
-    typename std::remove_const<std::remove_reference<H>>::type;
-template <typename H>
-using no_ref_t = typename std::remove_reference<H>::type;
-
 class ArchetypeBase {
    public:
+    using comp_mask_t = ComponentMask;
+    using comp_meta_t = std::vector<ComponentMetaBase>;
+    comp_mask_t comp_mask;
+    comp_meta_t comp_meta;
     virtual ~ArchetypeBase() {}
-    hash_code_t merged_hash;
-    component_set set;
-    bool operator==(ArchetypeBase arch) {
-        return merged_hash == arch.merged_hash;
+    ArchetypeBase() {}
+    ArchetypeBase& operator=(const ArchetypeBase& rhs) {
+        comp_mask.mask = rhs.comp_mask.mask;
+        comp_meta.clear();
+        for (auto& c : rhs.comp_meta) comp_meta.push_back(c);
+        return *this;
+    }
+    bool operator==(ArchetypeBase other) {
+        return comp_mask == other.comp_mask;
     }
 };
 template <typename... Cs>
 struct Archetype : public ArchetypeBase {
    public:
-    component_set set;
-    hash_code_t merged_hash{0};
-
-    constexpr Archetype() { (insert_meta_component<Cs>(), ...); }
-    constexpr Archetype(const Archetype<Cs...>& rhs)
-        : merged_hash{rhs.merged_hash}, set{rhs.set} {}
-    constexpr Archetype& operator=(const Archetype& rhs) {
-        merged_hash = rhs.merged_hash;
-        set.clear();
-        for (auto c : rhs.set) {
-            set.push_back(c);
+    Archetype() { (build_types<Cs>(), ...); }
+    Archetype(const Archetype& other) {
+        comp_mask = std::move(other.comp_mask);
+        comp_meta.clear();
+        for (auto& d : other.comp_meta) {
+            comp_meta.push_back(std::move(d));
         }
-        return *this;
     }
 
    private:
-    template <typename Component>
-    constexpr void insert_meta_component() {
-        using comp_t = no_ref_t<Component>;
-        auto meta = MetaComponent<comp_t>();
-        set.push_back(meta);
-        merged_hash += meta.id.hash;
+    template <typename C>
+    void build_types() {
+        using comp_t = no_ref_t<C>;
+        auto meta = ComponentMeta<comp_t>();
+        comp_meta.push_back(meta);
+        comp_mask.add<comp_t>();
     }
 };
 
 struct ArchetypeBlock {
+    using byte = char;
+    using block_allocator = std::allocator<byte>;
+
     const size_t block_size;
     const size_t max_entities;
     const size_t component_count;
@@ -75,18 +73,17 @@ struct ArchetypeBlock {
     template <typename... Cs>
     explicit ArchetypeBlock(size_t block_size, const Archetype<Cs...>& at)
         : block_size{block_size},
-          component_count{at.set.size()},
+          component_count{at.comp_meta.size()},
           max_entities{block_size /
                        (sizeof(unsigned) + (0 + ... + sizeof(Cs)))} {
-        archetype.merged_hash = at.merged_hash;
-        archetype.set = std::move(at.set);
+        archetype = Archetype<Cs...>(at);
         data = alloc.allocate(block_size);
         byte* cursor = data;
         components = new (cursor) ComponentStorage[component_count];
         cursor += sizeof(ComponentStorage) * component_count;
         unsigned i{0};
         unsigned offset{0};
-        for (const auto& meta : at.set) {
+        for (const auto& meta : archetype.comp_meta) {
             components[i] = ComponentStorage(meta, cursor + offset);
             offset += meta.size * max_entities;
             i++;
@@ -118,9 +115,9 @@ struct ArchetypeBlock {
 
     template <typename Component>
     ComponentStorage& get_storage() {
-        auto meta = MetaComponent<Component>();
+        auto meta = ComponentMeta<Component>();
         for (unsigned i{0}; i < component_count; i++) {
-            if (components[i].component.id.hash == meta.id.hash) {
+            if (components[i].component.id == meta.id) {
                 return components[i];
             }
         }

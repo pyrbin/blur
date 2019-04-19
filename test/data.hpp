@@ -20,3 +20,10 @@ struct TestSystem {
         pos.y += vel.f;
     }
 };
+
+struct OnlyPlayerSystem {
+    void process(Player& pl) const {
+        std::cout << "Only players !!"
+                  << "\n";
+    }
+};
