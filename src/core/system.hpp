@@ -56,7 +56,8 @@ struct SystemProcess : public SystemProcessBase {
         signature = ComponentMask();
         signature.merge<Args...>();
         proc_fn = [this, f](ArchetypeBlock* bl, unsigned idx) -> R {
-            auto arguments = std::forward_as_tuple(read<Args>(bl, idx)...);
+            auto arguments =
+                std::forward_as_tuple(fetch_comp<Args>(bl, idx)...);
             mem_fn_t<Args...> m_fn = [this, f, arguments](Args... args) -> R {
                 (sys_ptr.get()->*f)(std::forward<Args>(args)...);
             };
@@ -70,7 +71,7 @@ struct SystemProcess : public SystemProcessBase {
 
    private:
     template <typename T>
-    T& read(ArchetypeBlock* bl, unsigned idx) {
+    T& fetch_comp(ArchetypeBlock* bl, unsigned idx) {
         using comp_t = no_ref_t<T>;
         auto& storage = bl->template get_storage<comp_t>();
         auto& comp = storage.template try_get<comp_t>(idx);
