@@ -28,18 +28,24 @@ int main() {
 
     // Modify multiple
     // world.mod_comp<Velocity>(ent, [](Velocity& vel) { vel.f += 5; });
-    world.mod_comp_alt(ent, [](Velocity& vel) { vel.f += 5; });
-    world.mod_comp_alt(ent, std::bind(&TestSystem::process, new TestSystem(),
-                                      std::placeholders::_1));
+    world.mod_comp(ent, [](Velocity& vel) {
+        // mods velo
+        vel.f += 5;
+    });
+
+    world.mod_comp(ent, [](const Velocity& vel, Position& pos) {
+        // mods velo
+        pos.y += vel.f;
+    });
 
     // Test .has_comp
     print_nice("Test .has_comp");
     const auto has_pos = world.has_comp<Position>(ent);
     const auto has_pos_n_vel = world.has_comp<Position, Velocity>(ent);
     const auto has_player = world.has_comp<Player>(ent);
-    std::cout << "Has Pos: " << (has_pos ? "true" : "false") << "\n";
-    std::cout << "Has Pos&Vel: " << (has_pos_n_vel ? "true" : "false") << "\n";
-    std::cout << "Has Player: " << (has_player ? "true" : "false") << "\n";
+    std::cout << "has Pos: " << (has_pos ? "true" : "false") << "\n";
+    std::cout << "has Pos & Vel: " << (has_pos_n_vel ? "true" : "false") << "\n";
+    std::cout << "has Player: " << (has_player ? "true" : "false") << "\n";
 
     // Test .del_comp
     // world.del_comp<Position>(ent);
@@ -48,8 +54,8 @@ int main() {
     // world.add_comp<Position>(ent);
 
     // Add a test system
-    world.insert<TestSystem>();
-    world.insert<OnlyPlayerSystem>();
+    world.insert<MovSystem>();
+    world.insert<PlayerSystem>();
 
     // Simulate 3 ticks
     print_nice("Simulate 3 ticks");

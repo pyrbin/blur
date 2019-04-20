@@ -53,16 +53,22 @@ struct Archetype : public ArchetypeBase {
 };
 
 struct ArchetypeBlock {
+public:
     using byte = char;
     using block_allocator = std::allocator<byte>;
 
     const size_t block_size;
     const size_t max_entities;
     const size_t component_count;
+
     ComponentStorage* components;
+
     ArchetypeBase archetype;
+    
     block_allocator alloc;
+    
     byte* data{nullptr};
+    
     unsigned next{0};
 
     // Make iterator class
@@ -89,6 +95,7 @@ struct ArchetypeBlock {
             i++;
         }
     }
+
     ~ArchetypeBlock() {
         alloc.deallocate(data, block_size);
         data = nullptr;
@@ -106,12 +113,25 @@ struct ArchetypeBlock {
     }
     // ArchetypeBlock& operator=(ArchetypeBlock&&) = delete;
 
-    unsigned next_free() {
+    unsigned insert_new() {
         size = next + 1;
         return next++;
     }
 
     void initialize_entry(unsigned idx) {}
+
+    
+    // Functor objects
+    template <typename Functor>
+    void mod_entries(Functor&& f) {
+        mod_entries_inner(&f, &std::decay_t<Functor>::operator());
+    }
+
+    template <typename Component>
+    Component& get_entry(unsigned idx) {
+        auto& storage = get_storage<Component>();
+        return storage.template try_get<Component>(idx);
+    }
 
     template <typename Component>
     ComponentStorage& get_storage() {
@@ -122,6 +142,15 @@ struct ArchetypeBlock {
             }
         }
     }
+    
+private:
+    template <typename Class, typename... Args>
+    void mod_entries_inner(Class* obj, void (Class::*f)(Args...) const) {
+        for(unsigned i{0}; i < size; i++) {
+            (obj->*f)(get_entry<std::decay_t<Args>>(i)...);            
+        }
+    }
+
 };
 
 }  // namespace blur

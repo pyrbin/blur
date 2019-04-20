@@ -14,69 +14,57 @@
 
 namespace blur {
 
+class Entity;
 template <typename... Cs>
 class Archetype;
-
-class Entity;
 class ArchetypeBlock;
 
-using hash_code_t = size_t;
-using hash_list = std::vector<ComponentMetaBase>&;
+struct SystemFunctorBase
+{
+public:
+    ~SystemFunctorBase(){};
+    template<typename S, typename R = void, typename... Args>
+    void init(void (S::*f)(Args...) const) {
+        static_assert(true,
+                "Dont init base system fun");
+    }
+    virtual bool valid_mask(ComponentMask) const = 0;
+    virtual void operator()(ArchetypeBlock*) const = 0;
+protected:
+    template <typename System>
+    using system_ptr_t = std::unique_ptr<System>;
+    using fn_ptr_t = std::function<void(ArchetypeBlock* ab)>;
+    template <typename... Args>
+    using mod_ptr_t = std::function<void(Args...)>;  
 
-template <typename... Args>
-using mem_fn_t = std::function<void(Args...)>;
-
-template <typename System>
-using system_ptr_t = std::unique_ptr<System>;
-using proc_fn_t = std::function<void(ArchetypeBlock*, unsigned)>;
-template <typename H>
-using no_ref_t = typename std::remove_reference<H>::type;
-
-struct SystemProcessBase {
-   public:
-    // ArchetypeBase archetype;
-    virtual ~SystemProcessBase() {}
-    ComponentMask signature;
-    virtual void operator()(ArchetypeBlock* bl, unsigned idx) = 0;
-    template <typename S, typename R = void, typename... Args>
-    void set_mem_fn(void (S::*f)(Args...) const) {
-        static_assert(true, "Can't set system function in base class!");
-    };
 };
-
-template <typename S>
-struct SystemProcess : public SystemProcessBase {
-   public:
-    system_ptr_t<S> sys_ptr;
-    proc_fn_t proc_fn;
-
-    SystemProcess(S* sys) : sys_ptr{system_ptr_t<S>(sys)} {}
-    template <typename R = void, typename... Args>
-    void set_mem_fn(void (S::*f)(Args...) const) {
-        signature = ComponentMask();
-        signature.merge<Args...>();
-        proc_fn = [this, f](ArchetypeBlock* bl, unsigned idx) -> R {
-            auto arguments =
-                std::forward_as_tuple(fetch_comp<Args>(bl, idx)...);
-            mem_fn_t<Args...> m_fn = [this, f, arguments](Args... args) -> R {
-                (sys_ptr.get()->*f)(std::forward<Args>(args)...);
+template<typename S>
+struct SystemFunctor : public SystemFunctorBase
+{
+public:
+    SystemFunctor(S* s) : sysptr{system_ptr_t<S>(s)} {}
+    template<typename R = void, typename... Args>
+    void init(void (S::*f)(Args...) const) {
+        comp_mask = ImmutableComponentMask<Args...>();
+        fn = [this, f](ArchetypeBlock* ab) -> void { 
+            auto modfn = [this, f](Args... args) -> void {
+                (sysptr.get()->*f)(std::forward<Args>(args)...);
             };
-            std::apply(m_fn, arguments);
+            ab->mod_entries(static_cast<mod_ptr_t<Args...>>(modfn));
         };
     }
-    ~SystemProcess() {}
-    constexpr void operator()(ArchetypeBlock* bl, unsigned idx) override {
-        return proc_fn(bl, idx);
+
+    constexpr bool valid_mask(ComponentMask other) const override {
+        return other.contains(comp_mask);
     }
 
-   private:
-    template <typename T>
-    T& fetch_comp(ArchetypeBlock* bl, unsigned idx) {
-        using comp_t = no_ref_t<T>;
-        auto& storage = bl->template get_storage<comp_t>();
-        auto& comp = storage.template try_get<comp_t>(idx);
-        return comp;
+    void operator()(ArchetypeBlock* ab) const override {
+        fn(ab);
     }
+private:
+    ComponentMask comp_mask{0};
+    system_ptr_t<S> sysptr;
+    fn_ptr_t fn;
 };
 
 }  // namespace blur

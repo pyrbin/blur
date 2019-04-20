@@ -15,7 +15,7 @@ namespace blur {
 
 class World {
    public:
-    using systm_t = std::shared_ptr<SystemProcessBase>;
+    using systm_t = std::shared_ptr<SystemFunctorBase>;
     using block_t = std::shared_ptr<ArchetypeBlock>;
     using cmask_t = ComponentMask;
 
@@ -36,59 +36,33 @@ class World {
     void insert(Args... args) {
         static_assert(has_process_fn<Sys>(),
                       "Systems requires a valid process function");
-        auto sfn = systm_t(new SystemProcess(new Sys()));
-        static_cast<SystemProcess<Sys>*>(sfn.get())->set_mem_fn(&Sys::process);
-        systems.push_back(sfn);
+        auto uptr = systm_t(new SystemFunctor(new Sys()));
+        static_cast<SystemFunctor<Sys>*>(uptr.get())->init(&Sys::process);
+        systems.push_back(uptr);
     }
 
     void tick() {
         for (auto& sys : systems) {
-            for (auto& blk : blocks) {
-                auto valid_block =
-                    blk->archetype.comp_mask.contains(sys->signature);
-                if (valid_block) {
-                    for (unsigned i{0}; i < blk->size; i++) {
-                        sys->operator()(blk.get(), i);
-                    }
+            for (auto& block : blocks){
+                if(sys.get()->valid_mask(block->archetype.comp_mask)) {
+                    sys->operator()(block.get());
                 }
             }
         }
     }
 
+
+    // Get component by entity entry
     template <typename C>
     constexpr C& get_comp(Entity ent) noexcept {
-        auto end = et.lookup(ent);
-        auto stg = end.block->get_storage<C>();
-        return stg.template try_get<C>(end.block_index);
+        auto da = et.lookup(ent);
+        return da.block->get_entry<C>(da.block_index);
     }
 
-    template <typename... Cs, typename F>
-    void mod_comp(Entity ent, F&& f) {
-        return std::forward<F>(f)(get_comp<Cs>(ent)...);
-    }
-
-    template <typename Class, typename... Params>
-    void mod_comp_helper(Entity ent, Class* obj,
-                         void (Class::*f)(Params...) const) {
-        //(sys_ptr.get()->*f)(std::forward<Args>(args)...);
-        (obj->*f)(get_comp<std::decay_t<Params>>(ent)...);
-    }
-
-    // optional overload for mutable lambdas
-    template <typename Class, typename... Params>
-    void mod_comp_helper(Entity ent, Class* obj, void (Class::*f)(Params...)) {
-        (obj->*f)(get_comp<std::decay_t<Params>>(ent)...);
-    }
-
+    // Functor objects
     template <typename Functor>
-    void mod_comp_alt(Entity ent, Functor&& f) {
+    void mod_comp(Entity ent, Functor&& f) {
         mod_comp_helper(ent, &f, &std::decay_t<Functor>::operator());
-    }
-
-    // optional overload for function pointers
-    template <typename... Params>
-    void mod_comp_alt(Entity ent, void (*f)(Params...)) {
-        f(get_comp<std::decay_t<Params>(ent)>...);
     }
 
     template <typename... Cs>
@@ -114,7 +88,6 @@ class World {
    private:
     std::vector<systm_t> systems;
     std::vector<block_t> blocks;
-    std::vector<cmask_t> block_hashes;
     EntityTable et;
 
     template <typename... Cs>
@@ -124,18 +97,31 @@ class World {
 
         const cmask_t mask = arch.comp_mask;
 
-        for (size_t i{0}; i < blocks.size(); i++) {
-            if (block_hashes[i] == mask) {
-                ptr = blocks[i];
+        for (auto& block : blocks) {
+            if (block->archetype.comp_mask == mask) {
+                ptr = block;
                 break;
             }
         }
         if (ptr == nullptr) {
             ptr = std::make_shared<ArchetypeBlock>(BLOCK_SIZE, arch);
             blocks.push_back(ptr);
-            block_hashes.push_back(mask);
         }
         return ptr;
     }
+    
+    // https://stackoverflow.com/questions/55756181/use-lambda-to-modify-references-identified-by-a-packed-parameter
+    template <typename Class, typename... Args>
+    void mod_comp_helper(Entity ent, Class* obj,
+                         void (Class::*f)(Args...) const) {
+        (obj->*f)(get_comp<std::decay_t<Args>>(ent)...);
+    }
+    
+    // optional overload for mutable lambdas
+    template <typename Class, typename... Args>
+    void mod_comp_helper(Entity ent, Class* obj, void (Class::*f)(Args...)) {
+        (obj->*f)(get_comp<std::decay_t<Args>>(ent)...);
+    }
 };
+
 }  // namespace blur

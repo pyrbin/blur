@@ -50,7 +50,7 @@ struct EntityTable {
         }
         auto& data = entities_data[idx];
         data.block = block_t(block);
-        data.block_index = data.block->next_free();
+        data.block_index = data.block->insert_new();
         return {idx, entities_data[idx]};
     }
 

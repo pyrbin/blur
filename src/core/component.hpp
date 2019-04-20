@@ -9,13 +9,14 @@
 namespace blur {
 
 using byte = char;
-using hash_code_t = uint_fast32_t;
+using hash_code_t = unsigned;
 
 struct ComponentMask {
     hash_code_t mask{0};
     template <typename C>
     hash_code_t add() {
-        mask |= (1 << typeid(C).hash_code());
+        using comp_t = no_ref_t<C>;
+        mask |= (1 << typeid(comp_t).hash_code());
         return mask;
     }
     template <typename... Cs>
@@ -25,7 +26,8 @@ struct ComponentMask {
     }
     template <typename C>
     hash_code_t remove() {
-        mask &= ~(1 << typeid(C).hash_code());
+        using comp_t = no_ref_t<C>;
+        mask &= ~(1 << typeid(comp_t).hash_code());
         return mask;
     }
     template <typename... Cs>

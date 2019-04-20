@@ -13,7 +13,7 @@ struct Player {
     /* data */
 };
 
-struct TestSystem {
+struct MovSystem {
     void process(Position& pos, Velocity& vel) const {
         std::cout << "Position [" << pos.x << ", " << pos.y << "]\n";
         pos.x += vel.f;
@@ -21,9 +21,9 @@ struct TestSystem {
     }
 };
 
-struct OnlyPlayerSystem {
+struct PlayerSystem {
     void process(Player& pl) const {
-        std::cout << "Only players !!"
+        std::cout << "Process players!"
                   << "\n";
     }
 };
