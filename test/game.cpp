@@ -19,7 +19,7 @@ int main() {
     auto world = blur::World();
 
     // Create an archetype
-    auto aty = blur::Archetype::of<Velocity>();
+    auto aty = blur::Archetype::of<Velocity, Position>();
 
     // Create an entitys
     // which allocates a new archetype block
@@ -32,7 +32,7 @@ int main() {
         vel.f += 5;
     });
 
-    world.add_comp<Position, Player>(ent);
+   // world.add_comp<Position, Player>(ent);
 
     world.insert<MovSystem>();
 

@@ -9,9 +9,12 @@
 #include <vector>
 
 #include "component.hpp"
+#include "entity.hpp"
 #include "util.hpp"
 
 namespace blur {
+
+class Entity;
 
 class Archetype {
    public:
@@ -78,11 +81,12 @@ public:
     using byte = char;
     using block_allocator = std::allocator<byte>;
 
-    const size_t block_size;
-    const size_t max_entities;
-    const size_t component_count;
+    size_t block_size;
+    size_t max_entities;
+    size_t component_count;
     Archetype archetype;
 
+    std::vector<Entity> entities;
     ComponentStorage* components;
     
     block_allocator alloc;
@@ -91,18 +95,17 @@ public:
     
     unsigned next{0};
 
-    // Make iterator class
-    // do get all occupied entities in an array
-    unsigned size{0};
 
     // TODO: archetype doesnt keep set??
     template <typename... Cs>
     explicit ArchetypeBlock(size_t block_size, const Archetype& at)
         : block_size{block_size},
           archetype{Archetype(at)},
-          component_count{at.comp_meta.size()},
-          max_entities{block_size /
-                       (sizeof(unsigned) + (0 + ... + sizeof(Cs)))} {
+          component_count{at.comp_meta.size()} {
+
+        max_entities = block_size /
+                       (sizeof(Entity) + (0 + ... + sizeof(Cs)));
+                       
         data = alloc.allocate(block_size);
         byte* cursor = data;
         components = new (cursor) ComponentStorage[component_count];
@@ -121,13 +124,12 @@ public:
         data = nullptr;
     }
 
-    unsigned insert_new() {
-        size = next + 1;
+    unsigned insert(Entity ent) {
+        entities.push_back(ent);
+        for (unsigned i{0}; i < component_count; i++) {
+            components[i].create(next);
+        }
         return next++;
-    }
-
-    void shrink() {
-        size = --next;
     }
 
 
@@ -139,27 +141,23 @@ public:
 				auto& this_c = components[j];
 				if (this_c.component.id == other_c.component.id)
 				{
-                    std::cout << "MEMCPY\n";
-                    memcpy(this_c.index_ptr(idx), other_c.index_ptr(other), this_c.component.size);
-                    break;
+
 				}
             }
         }
     }
     
+
+
     // Functor objects
     template <typename Functor>
     void mod_entries(Functor&& f) {
-                            std::cout << "M1221EMCPY\n";
-
         mod_entries_inner(&f, &std::decay_t<Functor>::operator());
     }
 
     template <typename Component>
     Component& get_entry(unsigned idx) {
         auto& storage = get_storage<Component>();
-                                    std::cout << "M1221EMCPY\n";
-
         return storage.template try_get<Component>(idx);
     }
 
@@ -176,7 +174,7 @@ public:
 private:
     template <typename Class, typename... Args>
     void mod_entries_inner(Class* obj, void (Class::*f)(Args...) const) {
-        for(unsigned i{0}; i < size; i++) {
+        for(unsigned i{0}; i < entities.size(); i++) {
             (obj->*f)(get_entry<std::decay_t<Args>>(i)...);         
         }
     }

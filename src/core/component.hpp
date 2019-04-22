@@ -105,6 +105,10 @@ struct ComponentStorage {
     void destroy(unsigned idx) { component.dtor(index_ptr(idx)); }
     void* index_ptr(unsigned idx) { return cursor + (idx * component.size); }
 
+    void copy_from(unsigned sidx, unsigned oidx, ComponentStorage& other) {
+        memcpy(index_ptr(sidx), other.index_ptr(oidx), component.size);
+    }
+
     template <typename T>
     constexpr T& try_get(size_t idx) {
         auto other = ComponentMeta::of<T>();

@@ -44,9 +44,7 @@ class World {
     void tick() {
         for (auto& sys : systems) {
             for (auto& block : blocks) {
-                std::cout << block->archetype.comp_mask.mask << "\n";
                 if(sys.get()->valid_mask(block->archetype.comp_mask)) {
-                    std::cout << block.get()->component_count << "\n";
                     sys->operator()(block.get());
                 }
             }
@@ -69,27 +67,14 @@ class World {
 
     template <typename... Cs>
     void add_comp(Entity ent) {
-        //assert(has_comp<Cs...>(ent),
-        //              "TODO: add good error msg (no has comp to delete)");
-
         auto& old_data = et.lookup(ent);
         auto old_block = old_data.block;
         auto old_idx = old_data.block_index;
         auto arch = old_block->archetype;
-
         (arch.add<Cs>(), ...);
-
-        auto block = create_archetype_block(arch);
-        std::cout << "sosksk\n";
-        
+        auto block = create_archetype_block(arch);        
         if(block->archetype == old_block->archetype) return;
-            std::cout << "sosksssk\n";
-
         auto [idx, data] = et.insert_to_block(ent.id, block);
-                    std::cout << "sosksssk\n";
-
-        block->cpy_from(data.block_index, old_block.get(), old_idx);
-        old_block->shrink();
     }
 
     template <typename... Cs>

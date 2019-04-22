@@ -49,11 +49,7 @@ public:
     instert_ret_t insert_to_block(EntityId idx, block_t block) {
         auto& data = entities_data[idx];
         data.block = block_t(block);
-                    std::cout << (data.block.get() == nullptr) << "\n";
-
-        data.block_index = data.block->insert_new();
-                    std::cout << "soskssskend\n";
-
+        data.block_index = data.block->insert({idx, data.counter});
         return {idx, data};
     }
 
