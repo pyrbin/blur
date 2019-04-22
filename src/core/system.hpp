@@ -9,14 +9,9 @@
 #include <tuple>
 #include <utility>
 
-#include "archetype.hpp"
-#include "entity.hpp"
-
 namespace blur {
 
 class Entity;
-template <typename... Cs>
-class Archetype;
 class ArchetypeBlock;
 
 struct SystemFunctorBase

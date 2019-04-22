@@ -19,14 +19,14 @@ class World {
     using block_t = std::shared_ptr<ArchetypeBlock>;
     using cmask_t = ComponentMask;
 
-    World() : et{EntityTable(10000)} {}
-    template <typename... Cs>
-    constexpr Entity create() noexcept {
-        return create(Archetype<Cs...>());
-    }
+    World() : et{EntityTable(MAX_ENTITIES)} {}
 
     template <typename... Cs>
-    constexpr Entity create(const Archetype<Cs...>& arch) noexcept {
+    Entity create() noexcept {
+        return create(Archetype::of<Cs...>());
+    }
+
+    Entity create(const Archetype& arch) noexcept {
         auto block = create_archetype_block(arch);
         auto [idx, ed] = et.add(block);
         return {idx, ed.counter};
@@ -43,8 +43,10 @@ class World {
 
     void tick() {
         for (auto& sys : systems) {
-            for (auto& block : blocks){
+            for (auto& block : blocks) {
+                std::cout << block->archetype.comp_mask.mask << "\n";
                 if(sys.get()->valid_mask(block->archetype.comp_mask)) {
+                    std::cout << block.get()->component_count << "\n";
                     sys->operator()(block.get());
                 }
             }
@@ -67,13 +69,33 @@ class World {
 
     template <typename... Cs>
     void add_comp(Entity ent) {
-        // add component
+        //assert(has_comp<Cs...>(ent),
+        //              "TODO: add good error msg (no has comp to delete)");
+
+        auto& old_data = et.lookup(ent);
+        auto old_block = old_data.block;
+        auto old_idx = old_data.block_index;
+        auto arch = old_block->archetype;
+
+        (arch.add<Cs>(), ...);
+
+        auto block = create_archetype_block(arch);
+        std::cout << "sosksk\n";
+        
+        if(block->archetype == old_block->archetype) return;
+            std::cout << "sosksssk\n";
+
+        auto [idx, data] = et.insert_to_block(ent.id, block);
+                    std::cout << "sosksssk\n";
+
+        block->cpy_from(data.block_index, old_block.get(), old_idx);
+        old_block->shrink();
     }
 
     template <typename... Cs>
     void del_comp(Entity ent) {
-        static_assert(has_comp<Cs...>(ent),
-                      "TODO: add good error msg (no has comp to delete)");
+        // static_assert(!has_comp<Cs...>(ent),
+        //              "TODO: add good error msg (no has comp to delete)");
         auto& data = et.lookup(ent);
         auto& arch = data.block->archetype;
     }
@@ -90,24 +112,30 @@ class World {
     std::vector<block_t> blocks;
     EntityTable et;
 
-    template <typename... Cs>
-    constexpr block_t create_archetype_block(
-        const Archetype<Cs...>& arch) noexcept {
-        block_t ptr{nullptr};
+    block_t reallocate_entity(Entity ent, const Archetype& arch) noexcept {
+        block_t ptr{find_block(arch)};
+        if (ptr == nullptr) return create_archetype_block(arch);
+        return ptr;
+    }
 
-        const cmask_t mask = arch.comp_mask;
-
-        for (auto& block : blocks) {
-            if (block->archetype.comp_mask == mask) {
-                ptr = block;
-                break;
-            }
-        }
+    block_t create_archetype_block(const Archetype& arch) noexcept {
+        
+        block_t ptr{find_block(arch)};
         if (ptr == nullptr) {
             ptr = std::make_shared<ArchetypeBlock>(BLOCK_SIZE, arch);
             blocks.push_back(ptr);
         }
         return ptr;
+    }
+
+    block_t find_block(const Archetype& arch) {
+        const cmask_t mask = arch.comp_mask;
+        for (auto& block : blocks) {
+            if (block->archetype.comp_mask == mask) {
+                return block;
+            }
+        }
+        return nullptr;
     }
     
     // https://stackoverflow.com/questions/55756181/use-lambda-to-modify-references-identified-by-a-packed-parameter

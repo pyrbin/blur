@@ -26,6 +26,8 @@ struct EntityData {
 };
 
 struct EntityTable {
+public:
+    using instert_ret_t = std::tuple<EntityId, EntityData&>;
     size_t max_entities{0};
     std::vector<EntityData> entities_data;
     std::vector<EntityId> last_deleted;
@@ -39,19 +41,20 @@ struct EntityTable {
     }
 
     template <typename... Cs>
-    std::tuple<EntityId, EntityData&> add(block_t block) {
-        EntityId idx = -1;
-        if (last_deleted.size() > 0) {
-            idx = last_deleted.back();
-            last_deleted.pop_back();
-        } else {
-            idx = last_free;
-            last_free++;
-        }
+    instert_ret_t add(block_t block) {
+        return insert_to_block(get_next_free_id(), block);
+    }
+
+    template <typename... Cs>
+    instert_ret_t insert_to_block(EntityId idx, block_t block) {
         auto& data = entities_data[idx];
         data.block = block_t(block);
+                    std::cout << (data.block.get() == nullptr) << "\n";
+
         data.block_index = data.block->insert_new();
-        return {idx, entities_data[idx]};
+                    std::cout << "soskssskend\n";
+
+        return {idx, data};
     }
 
     void remove(Entity entity) {
@@ -78,6 +81,19 @@ struct EntityTable {
         }
         return data;
     }
+private:
+    EntityId get_next_free_id(){
+        EntityId idx = -1;
+        if (last_deleted.size() > 0) {
+            idx = last_deleted.back();
+            last_deleted.pop_back();
+        } else {
+            idx = last_free;
+            last_free++;
+        }
+        return idx;
+    }
+
 };
 
 }  // namespace blur

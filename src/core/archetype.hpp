@@ -4,6 +4,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -12,41 +13,61 @@
 
 namespace blur {
 
-class ArchetypeBase {
+class Archetype {
    public:
     using comp_mask_t = ComponentMask;
-    using comp_meta_t = std::vector<ComponentMetaBase>;
+    using comp_meta_t = std::vector<ComponentMeta>;
     comp_mask_t comp_mask;
     comp_meta_t comp_meta;
-    virtual ~ArchetypeBase() {}
-    ArchetypeBase() {}
-    ArchetypeBase& operator=(const ArchetypeBase& rhs) {
-        comp_mask.mask = rhs.comp_mask.mask;
-        comp_meta.clear();
-        for (auto& c : rhs.comp_meta) comp_meta.push_back(c);
-        return *this;
+
+    Archetype(){}
+
+    template <typename... Cs>
+    static Archetype of() {
+        auto arch = Archetype();
+        (arch.add_no_sort<Cs>(), ...);
+        arch.sort();
+        return arch;
     }
-    bool operator==(ArchetypeBase other) {
-        return comp_mask == other.comp_mask;
-    }
-};
-template <typename... Cs>
-struct Archetype : public ArchetypeBase {
-   public:
-    Archetype() { (build_types<Cs>(), ...); }
+
     Archetype(const Archetype& other) {
         comp_mask = std::move(other.comp_mask);
         comp_meta.clear();
         for (auto& d : other.comp_meta) {
             comp_meta.push_back(std::move(d));
         }
+        sort();
     }
 
-   private:
+    Archetype& operator=(const Archetype& rhs) {
+        comp_mask.mask = rhs.comp_mask.mask;
+        comp_meta.clear();
+        for (auto c : rhs.comp_meta) comp_meta.push_back(c);
+        sort();
+        return *this;
+    }
+
+    bool operator==(Archetype other) {
+        return comp_mask == other.comp_mask;
+    }
+
     template <typename C>
-    void build_types() {
+    void add() {
+        add_no_sort<C>();
+        sort();
+    }
+private:
+    void sort() {
+        using cm_t = ComponentMeta;
+        std::sort(comp_meta.begin(), comp_meta.end(), [](cm_t& a, cm_t& b) {
+            return a.id > b.id;   
+        });
+    }
+    template <typename C>
+    void add_no_sort() {
         using comp_t = no_ref_t<C>;
-        auto meta = ComponentMeta<comp_t>();
+        if(comp_mask.contains(comp_mask_t::of<C>())) return;
+        auto meta = ComponentMeta::of<comp_t>();
         comp_meta.push_back(meta);
         comp_mask.add<comp_t>();
     }
@@ -60,10 +81,9 @@ public:
     const size_t block_size;
     const size_t max_entities;
     const size_t component_count;
+    Archetype archetype;
 
     ComponentStorage* components;
-
-    ArchetypeBase archetype;
     
     block_allocator alloc;
     
@@ -77,12 +97,12 @@ public:
 
     // TODO: archetype doesnt keep set??
     template <typename... Cs>
-    explicit ArchetypeBlock(size_t block_size, const Archetype<Cs...>& at)
+    explicit ArchetypeBlock(size_t block_size, const Archetype& at)
         : block_size{block_size},
+          archetype{Archetype(at)},
           component_count{at.comp_meta.size()},
           max_entities{block_size /
                        (sizeof(unsigned) + (0 + ... + sizeof(Cs)))} {
-        archetype = Archetype<Cs...>(at);
         data = alloc.allocate(block_size);
         byte* cursor = data;
         components = new (cursor) ComponentStorage[component_count];
@@ -101,41 +121,51 @@ public:
         data = nullptr;
     }
 
-    // ArchetypeBlock(ArchetypeBlock&) = delete;
-    // ArchetypeBlock& operator=(ArchetypeBlock&) = delete;
-    ArchetypeBlock(ArchetypeBlock&& other)
-        : max_entities{other.max_entities},
-          block_size{other.block_size},
-          component_count{other.component_count} {
-        archetype = other.archetype;
-        data = other.data;
-        other.data = nullptr;
-    }
-    // ArchetypeBlock& operator=(ArchetypeBlock&&) = delete;
-
     unsigned insert_new() {
         size = next + 1;
         return next++;
     }
 
-    void initialize_entry(unsigned idx) {}
+    void shrink() {
+        size = --next;
+    }
 
+
+    void cpy_from(unsigned idx, ArchetypeBlock* ab, unsigned other){
+        for (unsigned i{0}; i < ab->component_count; i++) {
+            auto& other_c = ab->components[i];
+			for (unsigned j{0}; j < component_count; j++) 
+			{
+				auto& this_c = components[j];
+				if (this_c.component.id == other_c.component.id)
+				{
+                    std::cout << "MEMCPY\n";
+                    memcpy(this_c.index_ptr(idx), other_c.index_ptr(other), this_c.component.size);
+                    break;
+				}
+            }
+        }
+    }
     
     // Functor objects
     template <typename Functor>
     void mod_entries(Functor&& f) {
+                            std::cout << "M1221EMCPY\n";
+
         mod_entries_inner(&f, &std::decay_t<Functor>::operator());
     }
 
     template <typename Component>
     Component& get_entry(unsigned idx) {
         auto& storage = get_storage<Component>();
+                                    std::cout << "M1221EMCPY\n";
+
         return storage.template try_get<Component>(idx);
     }
 
     template <typename Component>
     ComponentStorage& get_storage() {
-        auto meta = ComponentMeta<Component>();
+        auto meta = ComponentMeta::of<Component>();
         for (unsigned i{0}; i < component_count; i++) {
             if (components[i].component.id == meta.id) {
                 return components[i];
@@ -147,7 +177,7 @@ private:
     template <typename Class, typename... Args>
     void mod_entries_inner(Class* obj, void (Class::*f)(Args...) const) {
         for(unsigned i{0}; i < size; i++) {
-            (obj->*f)(get_entry<std::decay_t<Args>>(i)...);            
+            (obj->*f)(get_entry<std::decay_t<Args>>(i)...);         
         }
     }
 

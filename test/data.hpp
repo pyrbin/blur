@@ -1,12 +1,12 @@
 #include <iostream>
 
 struct Position {
-    float x;
-    float y;
+    float x{0};
+    float y{0};
 };
 
 struct Velocity {
-    float f;
+    float f{0};
 };
 
 struct Player {
@@ -17,7 +17,7 @@ struct MovSystem {
     void process(Position& pos, Velocity& vel) const {
         std::cout << "Position [" << pos.x << ", " << pos.y << "]\n";
         pos.x += vel.f;
-        pos.y += vel.f;
+        pos.y -= vel.f;
     }
 };
 
