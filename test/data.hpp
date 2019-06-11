@@ -15,9 +15,9 @@ struct Player {
 
 struct MovSystem {
     void process(Position& pos, Velocity& vel) const {
-        std::cout << "Position [" << pos.x << ", " << pos.y << "]\n";
         pos.x += vel.f;
         pos.y -= vel.f;
+        std::cout << "Position [" << pos.x << ", " << pos.y << "]\n";
     }
 };
 

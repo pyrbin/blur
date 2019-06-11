@@ -12,7 +12,6 @@ using byte = char;
 using hash_code_t = unsigned;
 
 struct ComponentMask {
-    
     hash_code_t mask{0};
 
     template <typename... Cs>
@@ -50,19 +49,11 @@ struct ComponentMask {
 
     bool operator==(ComponentMask other) { return other.mask == mask; }
 
-    bool contains(hash_code_t other) {
-        return ((mask & other) == other);
-    }
+    bool contains(hash_code_t other) { return ((mask & other) == other); }
 
     bool contains(ComponentMask other) {
         return ((mask & other.mask) == other.mask);
     }
-
-};
-template <typename... Cs>
-struct ImmutableComponentMask : public ComponentMask {
-    const hash_code_t mask{0};
-    constexpr ImmutableComponentMask() : mask{merge<Cs...>()} {}
 };
 
 struct ComponentMeta {
@@ -77,14 +68,14 @@ struct ComponentMeta {
 
     ComponentMeta() {}
     ComponentMeta(hash_code_t id, size_t size, std::string name,
-                      ctor_func_t* ctor, dtor_func_t* dtor)
+                  ctor_func_t* ctor, dtor_func_t* dtor)
         : id{id}, size{size}, name{name}, ctor{ctor}, dtor{dtor} {}
 
     template <typename C>
     static ComponentMeta of() {
         return ComponentMeta(typeid(C).hash_code(), sizeof(C),
-                            typeid(C).name() + 1, [](void* p) { new (p) C{}; },
-                            [](void* p) { ((C*)p)->~C(); });
+                             typeid(C).name() + 1, [](void* p) { new (p) C{}; },
+                             [](void* p) { ((C*)p)->~C(); });
     }
 };
 
@@ -109,15 +100,15 @@ struct ComponentStorage {
         memcpy(index_ptr(sidx), other.index_ptr(oidx), component.size);
     }
 
-    template <typename T>
-    constexpr T& try_get(size_t idx) {
-        auto other = ComponentMeta::of<T>();
+    template <typename C>
+    constexpr C& try_get(size_t idx) {
+        auto other = ComponentMeta::of<C>();
         if (component.id != other.id)
             throw std::invalid_argument("Can't get component " + other.name +
                                         " from a " + component.name +
                                         " storage");
         else
-            return ((T*)cursor)[idx];
+            return ((C*)cursor)[idx];
     }
 };
 

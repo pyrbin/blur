@@ -1,10 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -23,7 +23,7 @@ class Archetype {
     comp_mask_t comp_mask;
     comp_meta_t comp_meta;
 
-    Archetype(){}
+    Archetype() {}
 
     template <typename... Cs>
     static Archetype of() {
@@ -50,26 +50,24 @@ class Archetype {
         return *this;
     }
 
-    bool operator==(Archetype other) {
-        return comp_mask == other.comp_mask;
-    }
+    bool operator==(Archetype other) { return comp_mask == other.comp_mask; }
 
     template <typename C>
     void add() {
         add_no_sort<C>();
         sort();
     }
-private:
+
+   private:
     void sort() {
         using cm_t = ComponentMeta;
-        std::sort(comp_meta.begin(), comp_meta.end(), [](cm_t& a, cm_t& b) {
-            return a.id > b.id;   
-        });
+        std::sort(comp_meta.begin(), comp_meta.end(),
+                  [](cm_t& a, cm_t& b) { return a.id > b.id; });
     }
     template <typename C>
     void add_no_sort() {
         using comp_t = no_ref_t<C>;
-        if(comp_mask.contains(comp_mask_t::of<C>())) return;
+        if (comp_mask.contains(comp_mask_t::of<C>())) return;
         auto meta = ComponentMeta::of<comp_t>();
         comp_meta.push_back(meta);
         comp_mask.add<comp_t>();
@@ -77,35 +75,31 @@ private:
 };
 
 struct ArchetypeBlock {
-public:
+   public:
     using byte = char;
     using block_allocator = std::allocator<byte>;
+    using entity_storage = std::vector<Entity>;
+    using component_storage = ComponentStorage*;
 
     size_t block_size;
     size_t max_entities;
     size_t component_count;
     Archetype archetype;
 
-    std::vector<Entity> entities;
-    ComponentStorage* components;
-    
+    entity_storage entities;
+    component_storage components;
     block_allocator alloc;
-    
+
     byte* data{nullptr};
-    
+
     unsigned next{0};
 
-
-    // TODO: archetype doesnt keep set??
     template <typename... Cs>
     explicit ArchetypeBlock(size_t block_size, const Archetype& at)
         : block_size{block_size},
           archetype{Archetype(at)},
           component_count{at.comp_meta.size()} {
-
-        max_entities = block_size /
-                       (sizeof(Entity) + (0 + ... + sizeof(Cs)));
-                       
+        max_entities = block_size / (sizeof(Entity) + (0 + ... + sizeof(Cs)));
         data = alloc.allocate(block_size);
         byte* cursor = data;
         components = new (cursor) ComponentStorage[component_count];
@@ -132,27 +126,32 @@ public:
         return next++;
     }
 
+    unsigned remove(unsigned idx) {
+        entities.erase(std::begin(entities) + idx);
+        for (unsigned i{0}; i < component_count; i++)
+            components[i].destroy(idx);
+        return next;
+    }
 
-    void cpy_from(unsigned idx, ArchetypeBlock* ab, unsigned other){
-        for (unsigned i{0}; i < ab->component_count; i++) {
-            auto& other_c = ab->components[i];
-			for (unsigned j{0}; j < component_count; j++) 
-			{
-				auto& this_c = components[j];
-				if (this_c.component.id == other_c.component.id)
-				{
-
-				}
+    void transfer_from(ArchetypeBlock* block, unsigned from, unsigned src) {
+        for (unsigned i{0}; i < component_count; i++) {
+            for (unsigned j{0}; j < block->component_count; j++) {
+                auto is_valid = block->components[j].component.id ==
+                                components[i].component.id;
+                if (is_valid) {
+                    components[i].copy_from(src, from, components[j]);
+                }
             }
         }
     }
-    
 
+    void for_each_storage(std::function<void(ComponentStorage&)> f) {
+        for (unsigned i{0}; i < component_count; i++) f(components[i]);
+    }
 
-    // Functor objects
     template <typename Functor>
-    void mod_entries(Functor&& f) {
-        mod_entries_inner(&f, &std::decay_t<Functor>::operator());
+    void modify_components(Functor&& f) {
+        modify_components_inner(&f, &std::decay_t<Functor>::operator());
     }
 
     template <typename Component>
@@ -170,15 +169,14 @@ public:
             }
         }
     }
-    
-private:
+
+   private:
     template <typename Class, typename... Args>
-    void mod_entries_inner(Class* obj, void (Class::*f)(Args...) const) {
-        for(unsigned i{0}; i < entities.size(); i++) {
-            (obj->*f)(get_entry<std::decay_t<Args>>(i)...);         
+    void modify_components_inner(Class* obj, void (Class::*f)(Args...) const) {
+        for (unsigned i{0}; i < entities.size(); i++) {
+            (obj->*f)(get_entry<std::decay_t<Args>>(i)...);
         }
     }
-
 };
 
 }  // namespace blur

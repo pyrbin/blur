@@ -7,7 +7,7 @@
 #include <tuple>
 
 #include "archetype.hpp"
-#include "entity.hpp"
+#include "entity_table.hpp"
 #include "system.hpp"
 #include "util.hpp"
 
@@ -44,19 +44,17 @@ class World {
     void tick() {
         for (auto& sys : systems) {
             for (auto& block : blocks) {
-                if(sys.get()->valid_mask(block->archetype.comp_mask)) {
+                if (sys.get()->valid_mask(block->archetype.comp_mask)) {
                     sys->operator()(block.get());
                 }
             }
         }
     }
 
-
     // Get component by entity entry
     template <typename C>
-    constexpr C& get_comp(Entity ent) noexcept {
-        auto da = et.lookup(ent);
-        return da.block->get_entry<C>(da.block_index);
+    constexpr const C& get_comp(Entity ent) noexcept {
+        return std::as_const(get_modable_comp<C>(ent));
     }
 
     // Functor objects
@@ -67,14 +65,17 @@ class World {
 
     template <typename... Cs>
     void add_comp(Entity ent) {
+        using storage_t = ComponentStorage;
         auto& old_data = et.lookup(ent);
         auto old_block = old_data.block;
         auto old_idx = old_data.block_index;
         auto arch = old_block->archetype;
         (arch.add<Cs>(), ...);
-        auto block = create_archetype_block(arch);        
-        if(block->archetype == old_block->archetype) return;
+        auto block = create_archetype_block(arch);
+        if (block->archetype == old_block->archetype) return;
         auto [idx, data] = et.insert_to_block(ent.id, block);
+        block->transfer_from(old_block.get(), old_idx, idx);
+        old_block->remove(old_idx);
     }
 
     template <typename... Cs>
@@ -89,7 +90,7 @@ class World {
     bool has_comp(Entity ent) {
         auto& data = et.lookup(ent);
         auto& arch = data.block->archetype;
-        return arch.comp_mask.contains(ImmutableComponentMask<Cs...>());
+        return arch.comp_mask.contains(ComponentMask::of<Cs...>());
     }
 
    private:
@@ -104,7 +105,6 @@ class World {
     }
 
     block_t create_archetype_block(const Archetype& arch) noexcept {
-        
         block_t ptr{find_block(arch)};
         if (ptr == nullptr) {
             ptr = std::make_shared<ArchetypeBlock>(BLOCK_SIZE, arch);
@@ -122,18 +122,24 @@ class World {
         }
         return nullptr;
     }
-    
+
     // https://stackoverflow.com/questions/55756181/use-lambda-to-modify-references-identified-by-a-packed-parameter
     template <typename Class, typename... Args>
     void mod_comp_helper(Entity ent, Class* obj,
                          void (Class::*f)(Args...) const) {
-        (obj->*f)(get_comp<std::decay_t<Args>>(ent)...);
+        (obj->*f)(get_modable_comp<std::decay_t<Args>>(ent)...);
     }
-    
+
     // optional overload for mutable lambdas
     template <typename Class, typename... Args>
     void mod_comp_helper(Entity ent, Class* obj, void (Class::*f)(Args...)) {
-        (obj->*f)(get_comp<std::decay_t<Args>>(ent)...);
+        (obj->*f)(get_modable_comp<std::decay_t<Args>>(ent)...);
+    }
+
+    template <typename C>
+    constexpr C& get_modable_comp(Entity ent) noexcept {
+        auto da = et.lookup(ent);
+        return da.block->get_entry<C>(da.block_index);
     }
 };
 

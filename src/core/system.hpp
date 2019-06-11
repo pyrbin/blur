@@ -14,38 +14,35 @@ namespace blur {
 class Entity;
 class ArchetypeBlock;
 
-struct SystemFunctorBase
-{
-public:
+struct SystemFunctorBase {
+   public:
     ~SystemFunctorBase(){};
-    template<typename S, typename R = void, typename... Args>
+    template <typename S, typename R = void, typename... Args>
     void init(void (S::*f)(Args...) const) {
-        static_assert(true,
-                "Dont init base system fun");
+        static_assert(true, "Dont init base system fun");
     }
     virtual bool valid_mask(ComponentMask) const = 0;
     virtual void operator()(ArchetypeBlock*) const = 0;
-protected:
+
+   protected:
     template <typename System>
     using system_ptr_t = std::unique_ptr<System>;
     using fn_ptr_t = std::function<void(ArchetypeBlock* ab)>;
     template <typename... Args>
-    using mod_ptr_t = std::function<void(Args...)>;  
-
+    using mod_ptr_t = std::function<void(Args...)>;
 };
-template<typename S>
-struct SystemFunctor : public SystemFunctorBase
-{
-public:
+template <typename S>
+struct SystemFunctor : public SystemFunctorBase {
+   public:
     SystemFunctor(S* s) : sysptr{system_ptr_t<S>(s)} {}
-    template<typename R = void, typename... Args>
+    template <typename R = void, typename... Args>
     void init(void (S::*f)(Args...) const) {
-        comp_mask = ImmutableComponentMask<Args...>();
-        fn = [this, f](ArchetypeBlock* ab) -> void { 
+        comp_mask = ComponentMask::of<Args...>();
+        fn = [this, f](ArchetypeBlock* ab) -> void {
             auto modfn = [this, f](Args... args) -> void {
                 (sysptr.get()->*f)(std::forward<Args>(args)...);
             };
-            ab->mod_entries(static_cast<mod_ptr_t<Args...>>(modfn));
+            ab->modify_components(static_cast<mod_ptr_t<Args...>>(modfn));
         };
     }
 
@@ -53,10 +50,9 @@ public:
         return other.contains(comp_mask);
     }
 
-    void operator()(ArchetypeBlock* ab) const override {
-        fn(ab);
-    }
-private:
+    void operator()(ArchetypeBlock* ab) const override { fn(ab); }
+
+   private:
     ComponentMask comp_mask{0};
     system_ptr_t<S> sysptr;
     fn_ptr_t fn;

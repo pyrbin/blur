@@ -27,17 +27,15 @@ int main() {
     auto ent = world.create(aty);
 
     // Modify multiple
-    world.mod_comp(ent, [](Velocity& vel) {
-        // mods velo
-        vel.f += 5;
-    });
 
-   // world.add_comp<Position, Player>(ent);
+    world.add_comp<Player>(ent);
+
+    auto en4 = world.create(aty);
+    auto en42 = world.create(aty);
+
+    world.mod_comp(ent, [](Velocity& vel) { vel.f = 5; });
 
     world.insert<MovSystem>();
 
     world.tick();
-    world.tick();
-    world.tick();
-
 }
