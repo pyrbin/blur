@@ -15,7 +15,7 @@ class ArchetypeBlock;
 
 using block_t = std::shared_ptr<ArchetypeBlock>;
 
-struct EntityData {
+struct EntityEntry {
     block_t block{nullptr};
     unsigned block_index{0};
     unsigned counter{0};
@@ -23,34 +23,34 @@ struct EntityData {
 
 struct EntityTable {
    public:
-    using instert_ret_t = std::tuple<EntityId, EntityData&>;
+    using insert_return_t = std::tuple<EntityId, EntityEntry&>;
     size_t max_entities{0};
-    std::vector<EntityData> entities_data;
+    std::vector<EntityEntry> entities;
     std::vector<EntityId> last_deleted;
     EntityId last_free{0};
 
-    EntityTable(unsigned entities = 3000) {
-        max_entities = entities;
+    EntityTable(unsigned max_entities) 
+        : max_entities{max_entities} {
         for (int i = 0; i < max_entities; i++) {
-            entities_data.push_back(EntityData{});
+            entities.push_back(EntityEntry{});
         }
     }
 
     template <typename... Cs>
-    instert_ret_t add(block_t block) {
+    insert_return_t add(block_t block) {
         return insert_to_block(get_next_free_id(), block);
     }
 
     template <typename... Cs>
-    instert_ret_t insert_to_block(EntityId idx, block_t block) {
-        auto& data = entities_data[idx];
+    insert_return_t insert_to_block(EntityId idx, block_t block) {
+        auto& data = entities[idx];
         data.block = block_t(block);
         data.block_index = data.block->insert({idx, data.counter});
         return {idx, data};
     }
 
     void remove(Entity entity) {
-        auto data = entities_data[entity.id];
+        auto data = entities[entity.id];
         if (entity.counter == data.counter) {
             // the entity still alive
             data.counter++;
@@ -62,8 +62,8 @@ struct EntityTable {
         }
     }
 
-    EntityData& lookup(Entity entity) {
-        auto& data = entities_data[entity.id];
+    EntityEntry& lookup(Entity entity) {
+        auto& data = entities[entity.id];
         if (data.counter != entity.counter) {
             std::ostringstream os_string;
             os_string << "Entity { id: " << entity.id

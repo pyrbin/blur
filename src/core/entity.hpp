@@ -14,6 +14,9 @@ using EntityId = int32_t;
 struct Entity {
     EntityId id{-1};
     unsigned counter{0};
+    bool operator ==(const Entity &other) const {
+		return id == other.id && counter == other.counter;
+	}
 };
 
 }

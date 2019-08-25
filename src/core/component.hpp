@@ -47,7 +47,7 @@ struct ComponentMask {
         return mask;
     }
 
-    bool operator==(ComponentMask other) { return other.mask == mask; }
+    bool operator==(const ComponentMask& other) const { return other.mask == mask; }
 
     bool contains(hash_code_t other) { return ((mask & other) == other); }
 
@@ -70,6 +70,8 @@ struct ComponentMeta {
     ComponentMeta(hash_code_t id, size_t size, std::string name,
                   ctor_func_t* ctor, dtor_func_t* dtor)
         : id{id}, size{size}, name{name}, ctor{ctor}, dtor{dtor} {}
+
+    bool operator==(const ComponentMeta& other) const { return other.id == id; }
 
     template <typename C>
     static ComponentMeta of() {

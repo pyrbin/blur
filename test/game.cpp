@@ -3,39 +3,45 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <chrono>
 
 #include "../src/blur.hpp"
 
 #include "data.hpp"
 
-void print_nice(std::string msg) {
-    std::cout << "==================\n"
-              << msg << "\n"
-              << "==================\n";
-}
+using namespace blur;
 
 int main() {
-    // Create a world
-    auto world = blur::World();
+    const unsigned ENTS = 10;
+    const unsigned ITER = 1;
 
-    // Create an archetype
-    auto aty = blur::Archetype::of<Velocity, Position>();
+    float tot_duration{0};
 
-    // Create an entitys
-    // which allocates a new archetype block
-    print_nice("Added Vel entity");
-    auto ent = world.create(aty);
 
-    // Modify multiple
+    for (auto t{0}; t < ITER; t++) {
+        // Create new world
+        auto world = World{};
 
-    world.add_comp<Player>(ent);
+        // Create an archetype
+        auto arch = Archetype::of<Position, Velocity>();
 
-    auto en4 = world.create(aty);
-    auto en42 = world.create(aty);
+        world.insert<MoveSystem>();
+        
+        auto start = std::chrono::high_resolution_clock::now(); 
+        // Create an entity
+        auto entt = world.batch(ENTS);
+        for(int i{0}; i < 10000; i++) {
+            world.tick();
+        }
+        world.remove(entt);
 
-    world.mod_comp(ent, [](Velocity& vel) { vel.f = 5; });
+        auto finish = std::chrono::high_resolution_clock::now(); 
 
-    world.insert<MovSystem>();
+        tot_duration += std::chrono::duration<float>(finish - start).count();
 
-    world.tick();
+    }
+    std::cout << "Batch size: " << ENTS << "\n";
+    std::cout << "Took: " << (float)((float)tot_duration/(float)ITER) << " seconds. \n";
+
 }
+

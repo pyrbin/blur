@@ -9,6 +9,7 @@ namespace blur {
 
 struct Actor {
     using world_ptr = std::shared_ptr<World>;
+    
     Entity entity;
     world_ptr world;
 

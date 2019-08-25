@@ -7,10 +7,17 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <iterator>
+#include <stdexcept>
+#include <numeric>
+#include <cassert>
+#include <set>
 
 #include "component.hpp"
 #include "entity.hpp"
 #include "util.hpp"
+
+#include "pre_allocator.hpp"
 
 namespace blur {
 
@@ -20,6 +27,8 @@ class Archetype {
    public:
     using comp_mask_t = ComponentMask;
     using comp_meta_t = std::vector<ComponentMeta>;
+    
+    unsigned size{0};
     comp_mask_t comp_mask;
     comp_meta_t comp_meta;
 
@@ -28,49 +37,56 @@ class Archetype {
     template <typename... Cs>
     static Archetype of() {
         auto arch = Archetype();
-        (arch.add_no_sort<Cs>(), ...);
-        arch.sort();
+        (arch.add<Cs>(), ...);
         return arch;
     }
 
     Archetype(const Archetype& other) {
         comp_mask = std::move(other.comp_mask);
         comp_meta.clear();
-        for (auto& d : other.comp_meta) {
+        for (auto& d : other.comp_meta)
             comp_meta.push_back(std::move(d));
-        }
-        sort();
+        update_order();
     }
 
     Archetype& operator=(const Archetype& rhs) {
         comp_mask.mask = rhs.comp_mask.mask;
         comp_meta.clear();
-        for (auto c : rhs.comp_meta) comp_meta.push_back(c);
-        sort();
+        for (auto c : rhs.comp_meta)
+            comp_meta.push_back(c);
+        update_order();
         return *this;
     }
 
-    bool operator==(Archetype other) { return comp_mask == other.comp_mask; }
+    bool operator==(const Archetype& other) const { return comp_mask == other.comp_mask; }
 
     template <typename C>
     void add() {
-        add_no_sort<C>();
-        sort();
-    }
-
-   private:
-    void sort() {
-        using cm_t = ComponentMeta;
-        std::sort(comp_meta.begin(), comp_meta.end(),
-                  [](cm_t& a, cm_t& b) { return a.id > b.id; });
-    }
-    template <typename C>
-    void add_no_sort() {
         using comp_t = no_ref_t<C>;
-        if (comp_mask.contains(comp_mask_t::of<C>())) return;
+        if (comp_mask.contains(comp_mask_t::of<comp_t>())) return;
         auto meta = ComponentMeta::of<comp_t>();
         comp_meta.push_back(meta);
         comp_mask.add<comp_t>();
+        update_order();
+    }
+
+    template <typename C>
+    void remove() {
+        using comp_t = no_ref_t<C>;
+        if (!comp_mask.contains(comp_mask_t::of<comp_t>())) return;
+        auto meta = ComponentMeta::of<comp_t>();
+        comp_meta.erase(std::find(comp_meta.cbegin(), comp_meta.cend(), meta));
+        comp_mask.remove<comp_t>();
+        update_order();
+    }
+
+   private:
+    void update_order() {
+        using cm_t = ComponentMeta;
+        std::sort(comp_meta.begin(), comp_meta.end(),
+                  [](cm_t& a, cm_t& b) { return a.id > b.id; });
+        auto meta_size = [](int sum, ComponentMeta b) { return sum + b.size; };
+        size = std::accumulate(comp_meta.begin(), comp_meta.end(), 0, meta_size);
     }
 };
 
@@ -78,37 +94,44 @@ struct ArchetypeBlock {
    public:
     using byte = char;
     using block_allocator = std::allocator<byte>;
-    using entity_storage = std::vector<Entity>;
+    using occupied_storage = std::set<size_t, std::less<size_t>, pre_allocator<size_t>>;
+    using entity_storage = Entity*;
     using component_storage = ComponentStorage*;
 
-    size_t block_size;
-    size_t max_entities;
-    size_t component_count;
-    Archetype archetype;
+    const size_t block_size;
+    const size_t component_count;
+    const Archetype archetype;
+    
+    size_t max_entries;
 
-    entity_storage entities;
-    component_storage components;
-    block_allocator alloc;
+    occupied_storage* occupied;
 
-    byte* data{nullptr};
-
-    unsigned next{0};
-
-    template <typename... Cs>
     explicit ArchetypeBlock(size_t block_size, const Archetype& at)
         : block_size{block_size},
           archetype{Archetype(at)},
           component_count{at.comp_meta.size()} {
-        max_entities = block_size / (sizeof(Entity) + (0 + ... + sizeof(Cs)));
+
         data = alloc.allocate(block_size);
         byte* cursor = data;
+
+        unsigned entry_size = sizeof(Entity) + archetype.size;
+		unsigned comp_header_size = sizeof(ComponentStorage) * component_count;
+        
+        max_entries = ((block_size - comp_header_size) / entry_size) - 2;
+        
+		entities = new (cursor) Entity[max_entries];
+		cursor += sizeof(Entity) * max_entries;
+
+        occupied = new occupied_storage(max_entries);
+        cursor += sizeof(size_t) * max_entries;
+
         components = new (cursor) ComponentStorage[component_count];
-        cursor += sizeof(ComponentStorage) * component_count;
-        unsigned i{0};
-        unsigned offset{0};
-        for (const auto& meta : archetype.comp_meta) {
-            components[i] = ComponentStorage(meta, cursor + offset);
-            offset += meta.size * max_entities;
+        cursor += comp_header_size;
+
+        unsigned i{0}, offset{0};
+        for (const auto& m : archetype.comp_meta) {
+            components[i] = ComponentStorage(m, cursor + offset);
+            offset += m.size * (max_entries + 1);
             i++;
         }
     }
@@ -118,22 +141,43 @@ struct ArchetypeBlock {
         data = nullptr;
     }
 
+    bool full() {
+        return space() <= 0;
+    }
+
+    unsigned space() {
+        return max_entries - size();
+    }
+
+    unsigned size() {
+        return last;
+    }
+
     unsigned insert(Entity ent) {
-        entities.push_back(ent);
+        assert(last <= max_entries);
+
+        entities[last] = ent;
+
         for (unsigned i{0}; i < component_count; i++) {
-            components[i].create(next);
+            components[i].create(last);
         }
-        return next++;
+
+        last++;
+        
+        return last++;
     }
 
     unsigned remove(unsigned idx) {
-        entities.erase(std::begin(entities) + idx);
+        assert(idx < max_entries);
         for (unsigned i{0}; i < component_count; i++)
             components[i].destroy(idx);
-        return next;
+        entities[idx].id = -1;
+        occupied[]
+        return last;
     }
 
     void transfer_from(ArchetypeBlock* block, unsigned from, unsigned src) {
+        assert(src < max_entries);
         for (unsigned i{0}; i < component_count; i++) {
             for (unsigned j{0}; j < block->component_count; j++) {
                 auto is_valid = block->components[j].component.id ==
@@ -150,12 +194,15 @@ struct ArchetypeBlock {
     }
 
     template <typename Functor>
-    void modify_components(Functor&& f) {
-        modify_components_inner(&f, &std::decay_t<Functor>::operator());
+    void modify_components(unsigned idx, Functor&& f) {
+        assert(idx < max_entries);
+        modify_components_inner(idx, &f, &std::decay_t<Functor>::operator());
     }
 
     template <typename Component>
     Component& get_entry(unsigned idx) {
+        assert(idx < max_entries);
+        assert(entities[idx].id >= 0);
         auto& storage = get_storage<Component>();
         return storage.template try_get<Component>(idx);
     }
@@ -168,14 +215,89 @@ struct ArchetypeBlock {
                 return components[i];
             }
         }
+        // TODO: probly not throw here, bad idea
+        std::ostringstream os_string;
+        os_string << "Entity does not have that component@" << meta.name;
+        throw std::invalid_argument(os_string.str());
     }
 
    private:
+    unsigned last{0};
+
+    block_allocator alloc;
+    component_storage components;
+    entity_storage entities;
+    byte* data{nullptr};
+
     template <typename Class, typename... Args>
-    void modify_components_inner(Class* obj, void (Class::*f)(Args...) const) {
-        for (unsigned i{0}; i < entities.size(); i++) {
-            (obj->*f)(get_entry<std::decay_t<Args>>(i)...);
+    void modify_components_inner(unsigned idx, Class* obj, void (Class::*f)(Args...) const) {
+        (obj->*f)(get_entry<std::decay_t<Args>>(idx)...);
+    }
+};
+
+class ArchetypeBlockStorage {
+public:
+    using block_t = std::shared_ptr<ArchetypeBlock>;
+
+	Archetype archetype;
+	size_t block_size;
+    
+    unsigned total_blocks{0};
+
+    std::vector<block_t> blocks;
+    block_t cached_free{nullptr};
+
+    explicit ArchetypeBlockStorage(size_t block_size, const Archetype& at)
+        : block_size{block_size},
+          archetype{Archetype{at}}{}
+	
+    block_t find_free(){
+        if (cached_free && !cached_free->full())
+            return cached_free;
+        
+        auto it = std::find_if(blocks.begin(), blocks.end(), [](auto& b){
+            return !b->full();
+        });
+
+        block_t ptr{nullptr};
+
+        if (it != blocks.end()) {
+            ptr = *it;
+        } else {
+            ptr = create_block();
         }
+
+        cached_free = ptr;
+        return ptr;
+    }
+
+    void remove(block_t* ab) {
+
+    }
+
+    void print(std::ostream& os){
+        auto i{0};
+        std::ostringstream oss;
+        oss << "==========================================\n";
+        oss << "| Block Storage | " << archetype.comp_mask.mask << "\n";
+        oss << "==========================================\n";
+        for(auto&& b : blocks) {
+            oss << "[" << i++ << "]\n";
+            oss << "  Max: " << b->max_entries << "\n";
+            oss << "  Curr: " << b->size() << "\n";
+            oss << "  Full: " << ((1-(float)b->space()/b->max_entries))*100 << "%\n";
+            oss << "  Comps: " << b->component_count << "\n";
+            oss << "------------------------------------------\n";
+        }
+        os << oss.str();
+    }
+
+private:
+    //privates
+    block_t create_block() {
+        auto ptr = std::make_shared<ArchetypeBlock>(block_size, archetype);
+        blocks.push_back(ptr);
+        return ptr;
     }
 };
 
